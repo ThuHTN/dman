@@ -3,7 +3,7 @@ import {
   map,
   Subscription,
   combineLatestWith,
-  tap,
+  shareReplay,
 } from "rxjs";
 import { onMounted, onUnmounted } from "vue";
 
@@ -13,41 +13,20 @@ export function dman<T>() {
     mutate: {},
   });
 
-  let pushAndRemove$ = new BehaviorSubject<{
-    type: string | null;
-    push: T[];
-    remove: any;
-  }>({
-    type: null,
-    push: [],
-    remove: null,
-  });
-
-  let push$ = new BehaviorSubject<T[]>([]);
+  let push$ = new BehaviorSubject<T | null>(null);
   let add$ = new BehaviorSubject<Array<((arg: T) => object) | object>>([]);
-  let remove$ = new BehaviorSubject<Array<keyof T | (() => void)>>([]);
+  let remove$ = new BehaviorSubject<Array<object>>([]);
 
   let set$ = new BehaviorSubject<T[]>([]);
 
   let source$ = set$.pipe(
     combineLatestWith(push$),
     map(([ob1, ob2]) => {
-      ob1.push(...ob2);
+      if (ob2) {
+        ob1.push(ob2);
+        console.log("ob1", ob1);
+      }
       return ob1;
-      // if (ob2.type === "push") {
-      //   ob1.push(...ob2.push);
-      //   return ob1;
-      // } else if (ob2.type === "remove") {
-      //   ob1.map((value) => {
-      //     if (typeof ob2.remove === "function") {
-      //       return ob2.remove(value);
-      //     } else {
-      //       const m: keyof T = ob2.remove;
-      //       delete value[m];
-      //       return value;
-      //     }
-      //   });
-      // }
     }),
     combineLatestWith(mut$),
     map(([ob1, ob2]) => {
@@ -62,7 +41,6 @@ export function dman<T>() {
           }
         });
         if (checkFind) {
-          //   console.log({ ...val, ...ob2.mutate });
           return { ...val, ...ob2.mutate };
         }
         return val;
@@ -79,17 +57,43 @@ export function dman<T>() {
             originalValue = { ...originalValue, ...value2 };
           }
         });
-        console.log({ originalValue });
         return originalValue;
       })
-    )
+    ),
+    combineLatestWith(remove$),
+    map(([ob1, ob2]) => {
+      ob2.map((ob2Val) => {
+        const keysArray = Object.keys(ob2Val);
+        const valArray = Object.values(ob2Val);
+
+        const checkBolArray: Array<boolean> = [];
+        let checkArrayMatch: boolean = false;
+        keysArray.map((key, i: number) => {
+          const getKey = key as keyof T;
+          const find = ob1.find((ob1Val) => ob1Val[getKey] === valArray[i]);
+          if (find) checkBolArray.push(true);
+        });
+
+        if (
+          checkBolArray.length === keysArray.length &&
+          checkBolArray.every((bol) => bol)
+        ) {
+          keysArray.map((key, i: number) => {
+            const getKey = key as keyof T;
+            ob1 = ob1.filter((ob1Val) => ob1Val[getKey] !== valArray[i]);
+          });
+        }
+      });
+      return ob1;
+    }),
+    shareReplay()
   );
 
   function returnObjects() {
     return {
       addField,
-      removeFields,
       push,
+      remove,
       mutate,
       set,
       subscribe: sub,
@@ -102,22 +106,17 @@ export function dman<T>() {
   }
 
   function addField(method: {} | ((param: T) => object)) {
-    console.log(method);
     add$.next([...add$.value, method]);
     return returnObjects();
   }
 
-  function removeFields(method: keyof T | any | ((param: T) => [])) {
-    pushAndRemove$.next({
-      type: "remove",
-      remove: method,
-      push: pushAndRemove$.value.push,
-    });
-    return returnObjects();
+  function push(obj: T) {
+    // push$.next([...push$.value, obj]);
+    push$.next(obj);
   }
 
-  function push(obj: T) {
-    push$.next([...push$.value, obj]);
+  function remove(obj: object) {
+    remove$.next([...remove$.value, obj]);
   }
 
   function mutate(find: object, mut: object) {
@@ -128,7 +127,6 @@ export function dman<T>() {
   let subscribe: Subscription;
 
   function sub(cb: (data: any) => any) {
-    console.log(cb);
     onMounted(() => {
       subscribe = source$.subscribe(cb);
     });

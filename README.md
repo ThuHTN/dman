@@ -1,4 +1,4 @@
-# DMan (Data Manipulation) Library
+# DMan (Reactive Data Manipulation) Library
 
 DMan (Data Manipulation) is a lightweight and easy-to-use library designed to simplify array manipulation. With DMan, you can easily perform various operations on arrays, making data manipulation a breeze in your projects.
 
